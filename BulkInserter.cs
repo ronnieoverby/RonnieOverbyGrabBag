@@ -50,6 +50,8 @@ namespace Overby.Data
         private readonly Lazy<Dictionary<string, MemberGetter>> _props =
             new Lazy<Dictionary<string, MemberGetter>>(GetPropertyInformation);
 
+        private readonly Lazy<DataTable> _dt;
+
         private readonly SqlBulkCopy _sbc;
         private readonly List<T> _queue = new List<T>();
 
@@ -64,6 +66,7 @@ namespace Overby.Data
             _bufferSize = bufferSize;
             _connection = connection;
             _sbc = sqlBulkCopy;
+            _dt = new Lazy<DataTable>(CreateDataTable);
         }
 
         /// <param name="connection">SqlConnection to use for retrieving the schema of sqlBulkCopy.DestinationTableName and for bulk insert.</param>
@@ -85,10 +88,8 @@ namespace Overby.Data
         {
             if (items == null) throw new ArgumentNullException("items");
 
-            var dt = CreateDataTable();
-
             // get columns that have a matching property
-            var cols = dt.Columns.Cast<DataColumn>()
+            var cols = _dt.Value.Columns.Cast<DataColumn>()
                 .Where(x => _props.Value.ContainsKey(x.ColumnName))
                 .Select(x => new { Column = x, Getter = _props.Value[x.ColumnName] })
                 .Where(x => x.Getter != null)
@@ -98,22 +99,22 @@ namespace Overby.Data
             {
                 foreach (var item in buffer)
                 {
-                    var row = dt.NewRow();
+                    var row = _dt.Value.NewRow();
 
                     foreach (var col in cols)
                         row[col.Column] = col.Getter(item);
 
-                    dt.Rows.Add(row);
+                    _dt.Value.Rows.Add(row);
                 }
 
                 var bulkInsertEventArgs = new BulkInsertEventArgs<T>(buffer);
                 OnPreBulkInsert(bulkInsertEventArgs);
-                
-                _sbc.WriteToServer(dt);
-                
+
+                _sbc.WriteToServer(_dt.Value);
+
                 OnPostBulkInsert(bulkInsertEventArgs);
 
-                dt.Clear();
+                _dt.Value.Clear();
             }
         }
 
