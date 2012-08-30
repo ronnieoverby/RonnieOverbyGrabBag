@@ -77,7 +77,7 @@ namespace Overby.WPF.Controls
             switch (first.Direction)
             {
                 case ListSortDirection.Ascending:
-                    result = queryable.OrderBy(first.PropertyName);
+                    result = queryable.OrderBy(first.PropertyName); // uses orderby extension methods!
                     break;
 
                 case ListSortDirection.Descending:
