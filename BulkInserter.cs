@@ -57,7 +57,7 @@ namespace Overby.Data
 
         /// <param name="connection">SqlConnection to use for retrieving the schema of sqlBulkCopy.DestinationTableName</param>
         /// <param name="sqlBulkCopy">SqlBulkCopy to use for bulk insert.</param>
-        /// <param name="bufferSize">Number of rows to bulk insert at a time. The default is 5000.</param>
+        /// <param name="bufferSize">Number of rows to bulk insert at a time. The default is 2000.</param>
         public BulkInserter(SqlConnection connection, SqlBulkCopy sqlBulkCopy, int bufferSize = DefaultBufferSize)
         {
             if (connection == null) throw new ArgumentNullException("connection");
@@ -71,7 +71,7 @@ namespace Overby.Data
 
         /// <param name="connection">SqlConnection to use for retrieving the schema of sqlBulkCopy.DestinationTableName and for bulk insert.</param>
         /// <param name="tableName">The name of the table that rows will be inserted into.</param>
-        /// <param name="bufferSize">Number of rows to bulk insert at a time. The default is 5000.</param>
+        /// <param name="bufferSize">Number of rows to bulk insert at a time. The default is 2000.</param>
         /// <param name="copyOptions">Options for SqlBulkCopy.</param>
         /// <param name="sqlTransaction">SqlTransaction for SqlBulkCopy</param>
         public BulkInserter(SqlConnection connection, string tableName, int bufferSize = DefaultBufferSize,
