@@ -10,7 +10,9 @@ using System.Data.SqlClient;
 using System.Linq;
 using Fasterflect; // http://nuget.org/packages/fasterflect -- PM> Install-Package fasterflect
 
+// ReSharper disable CheckNamespace
 namespace Overby.Data
+// ReSharper restore CheckNamespace
 {
     public class BulkInsertEventArgs<T> : EventArgs
     {
@@ -46,6 +48,7 @@ namespace Overby.Data
         private readonly SqlConnection _connection;
         private readonly int _bufferSize;
         public int BufferSize { get { return _bufferSize; } }
+        public int InsertedCount { get; private set; }
 
         private readonly Lazy<Dictionary<string, MemberGetter>> _props =
             new Lazy<Dictionary<string, MemberGetter>>(GetPropertyInformation);
@@ -95,25 +98,27 @@ namespace Overby.Data
                 .Where(x => x.Getter != null)
                 .ToArray();
 
-            foreach (var buffer in Buffer(items))
+            var groups = items.Select((item, index) => new {item, index}).GroupBy(x => x.index/BufferSize, x => x.item);
+            foreach (var group in groups)
             {
-                foreach (var item in buffer)
+                foreach (var item in group)
                 {
                     var row = _dt.Value.NewRow();
 
                     foreach (var col in cols)
-                        row[col.Column] = col.Getter(item);
+                        row[col.Column] = col.Getter(item) ?? DBNull.Value;
 
                     _dt.Value.Rows.Add(row);
                 }
 
-                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(buffer);
+                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(group);
                 OnPreBulkInsert(bulkInsertEventArgs);
 
                 _sbc.WriteToServer(_dt.Value);
 
                 OnPostBulkInsert(bulkInsertEventArgs);
 
+                InsertedCount += _dt.Value.Rows.Count;
                 _dt.Value.Clear();
             }
         }
@@ -142,6 +147,14 @@ namespace Overby.Data
             _queue.Clear();
         }
 
+        /// <summary>
+        /// Sets the InsertedCount property to zero.
+        /// </summary>
+        public void ResetInsertedCount()
+        {
+            InsertedCount = 0;
+        }
+
         private static Dictionary<string, MemberGetter> GetPropertyInformation()
         {
             return typeof(T).Properties().ToDictionary(x => x.Name, x => x.DelegateForGetPropertyValue());
@@ -159,23 +172,6 @@ namespace Overby.Data
             }
 
             return dt;
-        }
-
-        private IEnumerable<T[]> Buffer(IEnumerable<T> enumerable)
-        {
-            var buffer = new List<T>();
-            foreach (var item in enumerable)
-            {
-                buffer.Add(item);
-                if (buffer.Count >= BufferSize)
-                {
-                    yield return buffer.ToArray();
-                    buffer.Clear();
-                }
-            }
-
-            if (buffer.Count > 0)
-                yield return buffer.ToArray();
         }
     }
 }
