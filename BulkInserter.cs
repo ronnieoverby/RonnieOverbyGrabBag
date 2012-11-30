@@ -16,19 +16,23 @@ namespace Overby.Data
 {
     public class BulkInsertEventArgs<T> : EventArgs
     {
-        public BulkInsertEventArgs(IEnumerable<T> items)
+        public T[] Items { get; private set; }
+        public DataTable DataTable { get; set; }
+
+        public BulkInsertEventArgs(IEnumerable<T> items, DataTable dataTable)
         {
             if (items == null) throw new ArgumentNullException("items");
+            if (dataTable == null) throw new ArgumentNullException("dataTable");
             Items = items.ToArray();
+            DataTable = dataTable;
         }
 
-        public T[] Items { get; private set; }
     }
 
     /// <summary>
     /// Performs buffered bulk inserts into a sql server table using objects instead of DataRows. :)
     /// </summary>
-    public class BulkInserter<T> where T : class
+    public class BulkInserter<T> : IDisposable where T : class
     {
         public event EventHandler<BulkInsertEventArgs<T>> PreBulkInsert;
         public void OnPreBulkInsert(BulkInsertEventArgs<T> e)
@@ -55,6 +59,7 @@ namespace Overby.Data
 
         private readonly Lazy<DataTable> _dt;
 
+        private readonly bool _constructedSqlBulkCopy;
         private readonly SqlBulkCopy _sbc;
         private readonly List<T> _queue = new List<T>();
 
@@ -81,6 +86,7 @@ namespace Overby.Data
                             SqlBulkCopyOptions copyOptions = SqlBulkCopyOptions.Default, SqlTransaction sqlTransaction = null)
             : this(connection, new SqlBulkCopy(connection, copyOptions, sqlTransaction) { DestinationTableName = tableName }, bufferSize)
         {
+            _constructedSqlBulkCopy = true;
         }
 
         /// <summary>
@@ -98,7 +104,7 @@ namespace Overby.Data
                 .Where(x => x.Getter != null)
                 .ToArray();
 
-            var groups = items.Select((item, index) => new {item, index}).GroupBy(x => x.index/BufferSize, x => x.item);
+            var groups = items.Select((item, index) => new { item, index }).GroupBy(x => x.index / BufferSize, x => x.item);
             foreach (var group in groups)
             {
                 foreach (var item in group)
@@ -111,7 +117,7 @@ namespace Overby.Data
                     _dt.Value.Rows.Add(row);
                 }
 
-                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(group);
+                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(group, _dt.Value);
                 OnPreBulkInsert(bulkInsertEventArgs);
 
                 _sbc.WriteToServer(_dt.Value);
@@ -172,6 +178,12 @@ namespace Overby.Data
             }
 
             return dt;
+        }
+
+        public void Dispose()
+        {
+            if (_constructedSqlBulkCopy)
+                using (_sbc) _sbc.Close();
         }
     }
 }
