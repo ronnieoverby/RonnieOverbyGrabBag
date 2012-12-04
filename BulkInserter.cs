@@ -104,10 +104,9 @@ namespace Overby.Data
                 .Where(x => x.Getter != null)
                 .ToArray();
 
-            var groups = items.Select((item, index) => new { item, index }).GroupBy(x => x.index / BufferSize, x => x.item);
-            foreach (var group in groups)
+            foreach (var buffer in Buffer(items, BufferSize))
             {
-                foreach (var item in group)
+                foreach (var item in buffer)
                 {
                     var row = _dt.Value.NewRow();
 
@@ -117,7 +116,7 @@ namespace Overby.Data
                     _dt.Value.Rows.Add(row);
                 }
 
-                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(group, _dt.Value);
+                var bulkInsertEventArgs = new BulkInsertEventArgs<T>(buffer, _dt.Value);
                 OnPreBulkInsert(bulkInsertEventArgs);
 
                 _sbc.WriteToServer(_dt.Value);
@@ -126,6 +125,23 @@ namespace Overby.Data
 
                 InsertedCount += _dt.Value.Rows.Count;
                 _dt.Value.Clear();
+            }
+        }
+
+        private static IEnumerable<List<T>> Buffer(IEnumerable<T> items, int bufferSize)
+        {
+            var e = items.GetEnumerator();
+            var more = true;
+
+            while (more)
+            {
+                var buffer = new List<T>(bufferSize);
+
+                while ((more = e.MoveNext()) && bufferSize > buffer.Count)
+                    buffer.Add(e.Current);
+
+                if (buffer.Count > 0)
+                    yield return buffer;
             }
         }
 
