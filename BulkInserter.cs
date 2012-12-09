@@ -136,8 +136,8 @@ namespace Overby.Data
             while (more)
             {
                 var buffer = new List<T>(bufferSize);
-
-                while ((more = e.MoveNext()) && bufferSize > buffer.Count)
+                
+                while (bufferSize > buffer.Count && (more = e.MoveNext()))
                     buffer.Add(e.Current);
 
                 if (buffer.Count > 0)
