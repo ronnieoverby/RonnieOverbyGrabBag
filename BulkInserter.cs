@@ -8,7 +8,8 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
-using Fasterflect; // http://nuget.org/packages/fasterflect -- PM> Install-Package fasterflect
+using System.Linq.Expressions;
+using System.Reflection;
 
 // ReSharper disable CheckNamespace
 namespace Overby.Data
@@ -16,6 +17,7 @@ namespace Overby.Data
 {
     public class BulkInsertEventArgs<T> : EventArgs
     {
+
         public T[] Items { get; private set; }
         public DataTable DataTable { get; set; }
 
@@ -26,7 +28,6 @@ namespace Overby.Data
             Items = items.ToArray();
             DataTable = dataTable;
         }
-
     }
 
     /// <summary>
@@ -34,6 +35,9 @@ namespace Overby.Data
     /// </summary>
     public class BulkInserter<T> : IDisposable where T : class
     {
+        public string[] RemoveColumns { get; set; }
+
+
         public event EventHandler<BulkInsertEventArgs<T>> PreBulkInsert;
         public void OnPreBulkInsert(BulkInsertEventArgs<T> e)
         {
@@ -54,8 +58,8 @@ namespace Overby.Data
         public int BufferSize { get { return _bufferSize; } }
         public int InsertedCount { get; private set; }
 
-        private readonly Lazy<Dictionary<string, MemberGetter>> _props =
-            new Lazy<Dictionary<string, MemberGetter>>(GetPropertyInformation);
+        private readonly Lazy<Dictionary<string, Func<T, object>>> _props =
+            new Lazy<Dictionary<string, Func<T, object>>>(GetPropertyInformation);
 
         private readonly Lazy<DataTable> _dt;
 
@@ -136,7 +140,7 @@ namespace Overby.Data
             while (more)
             {
                 var buffer = new List<T>(bufferSize);
-                
+
                 while (bufferSize > buffer.Count && (more = e.MoveNext()))
                     buffer.Add(e.Current);
 
@@ -177,9 +181,20 @@ namespace Overby.Data
             InsertedCount = 0;
         }
 
-        private static Dictionary<string, MemberGetter> GetPropertyInformation()
+        private static Dictionary<string, Func<T, object>> GetPropertyInformation()
         {
-            return typeof(T).Properties().ToDictionary(x => x.Name, x => x.DelegateForGetPropertyValue());
+            return typeof (T).GetProperties().ToDictionary(x => x.Name, CreatePropertyGetter);
+        }
+
+        private static Func<T, object> CreatePropertyGetter(PropertyInfo propertyInfo)
+        {
+            if (typeof(T) != propertyInfo.DeclaringType)
+                throw new ArgumentException();
+
+            var instance = Expression.Parameter(propertyInfo.DeclaringType, "i");
+            var property = Expression.Property(instance, propertyInfo);
+            var convert = Expression.TypeAs(property, typeof(object));
+            return (Func<T, object>)Expression.Lambda(convert, instance).Compile();
         }
 
         private DataTable CreateDataTable()
@@ -192,6 +207,10 @@ namespace Overby.Data
                 using (var reader = cmd.ExecuteReader())
                     dt.Load(reader);
             }
+
+            if (RemoveColumns != null)
+                foreach (var col in RemoveColumns)
+                    dt.Columns.Remove(col);
 
             return dt;
         }
