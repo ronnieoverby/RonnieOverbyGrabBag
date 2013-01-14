@@ -35,6 +35,7 @@ namespace Overby.Data
     /// </summary>
     public class BulkInserter<T> : IDisposable where T : class
     {
+        
         public string[] RemoveColumns { get; set; }
 
 
@@ -66,6 +67,8 @@ namespace Overby.Data
         private readonly bool _constructedSqlBulkCopy;
         private readonly SqlBulkCopy _sbc;
         private readonly List<T> _queue = new List<T>();
+        public TimeSpan? BulkCopyTimeout { get; set; }
+        private readonly SqlTransaction _tran;
 
         /// <param name="connection">SqlConnection to use for retrieving the schema of sqlBulkCopy.DestinationTableName</param>
         /// <param name="sqlBulkCopy">SqlBulkCopy to use for bulk insert.</param>
@@ -90,6 +93,7 @@ namespace Overby.Data
                             SqlBulkCopyOptions copyOptions = SqlBulkCopyOptions.Default, SqlTransaction sqlTransaction = null)
             : this(connection, new SqlBulkCopy(connection, copyOptions, sqlTransaction) { DestinationTableName = tableName }, bufferSize)
         {
+            _tran = sqlTransaction;
             _constructedSqlBulkCopy = true;
         }
 
@@ -123,6 +127,9 @@ namespace Overby.Data
                 var bulkInsertEventArgs = new BulkInsertEventArgs<T>(buffer, _dt.Value);
                 OnPreBulkInsert(bulkInsertEventArgs);
 
+                if (BulkCopyTimeout.HasValue)
+                    _sbc.BulkCopyTimeout = (int) BulkCopyTimeout.Value.TotalSeconds;
+
                 _sbc.WriteToServer(_dt.Value);
 
                 OnPostBulkInsert(bulkInsertEventArgs);
@@ -132,21 +139,18 @@ namespace Overby.Data
             }
         }
 
-        private static IEnumerable<List<T>> Buffer(IEnumerable<T> items, int bufferSize)
+        public static IEnumerable<IEnumerable<T>> Buffer(IEnumerable<T> source, int bufferSize)
         {
-            var e = items.GetEnumerator();
-            var more = true;
+            using (var enumerator = source.GetEnumerator())
+                while (enumerator.MoveNext())
+                    yield return YieldBufferElements(enumerator, bufferSize - 1);
+        }
 
-            while (more)
-            {
-                var buffer = new List<T>(bufferSize);
-
-                while (bufferSize > buffer.Count && (more = e.MoveNext()))
-                    buffer.Add(e.Current);
-
-                if (buffer.Count > 0)
-                    yield return buffer;
-            }
+        private static IEnumerable<T> YieldBufferElements(IEnumerator<T> source, int bufferSize)
+        {
+            yield return source.Current;
+            for (var i = 0; i < bufferSize && source.MoveNext(); i++)
+                yield return source.Current;
         }
 
         /// <summary>
@@ -183,7 +187,7 @@ namespace Overby.Data
 
         private static Dictionary<string, Func<T, object>> GetPropertyInformation()
         {
-            return typeof (T).GetProperties().ToDictionary(x => x.Name, CreatePropertyGetter);
+            return typeof(T).GetProperties().ToDictionary(x => x.Name, CreatePropertyGetter);
         }
 
         private static Func<T, object> CreatePropertyGetter(PropertyInfo propertyInfo)
@@ -202,6 +206,7 @@ namespace Overby.Data
             var dt = new DataTable();
             using (var cmd = _connection.CreateCommand())
             {
+                cmd.Transaction = _tran;
                 cmd.CommandText = string.Format("select top 0 * from {0}", _sbc.DestinationTableName);
 
                 using (var reader = cmd.ExecuteReader())
