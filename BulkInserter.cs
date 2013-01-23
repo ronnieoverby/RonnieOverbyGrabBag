@@ -21,7 +21,7 @@ namespace Overby.Data
         public T[] Items { get; private set; }
         public DataTable DataTable { get; set; }
 
-        public BulkInsertEventArgs(IEnumerable<T> items, DataTable dataTable)
+        public BulkInsertEventArgs(T[] items, DataTable dataTable)
         {
             if (items == null) throw new ArgumentNullException("items");
             if (dataTable == null) throw new ArgumentNullException("dataTable");
@@ -35,7 +35,7 @@ namespace Overby.Data
     /// </summary>
     public class BulkInserter<T> : IDisposable where T : class
     {
-        
+
         public string[] RemoveColumns { get; set; }
 
 
@@ -112,7 +112,7 @@ namespace Overby.Data
                 .Where(x => x.Getter != null)
                 .ToArray();
 
-            foreach (var buffer in Buffer(items, BufferSize))
+            foreach (var buffer in Buffer(items, BufferSize).Select(x => x.ToArray()))
             {
                 foreach (var item in buffer)
                 {
@@ -128,7 +128,7 @@ namespace Overby.Data
                 OnPreBulkInsert(bulkInsertEventArgs);
 
                 if (BulkCopyTimeout.HasValue)
-                    _sbc.BulkCopyTimeout = (int) BulkCopyTimeout.Value.TotalSeconds;
+                    _sbc.BulkCopyTimeout = (int)BulkCopyTimeout.Value.TotalSeconds;
 
                 _sbc.WriteToServer(_dt.Value);
 
