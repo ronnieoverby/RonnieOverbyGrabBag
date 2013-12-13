@@ -31,6 +31,8 @@ namespace Overby
             Descending = descending;
         }
 
+	// parses strings like "Name DESC" or "Whatever ASC"
+	// ascending is the default
         public static SortDescriptor Parse(string s)
         {
             var parts = s.Split().Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
