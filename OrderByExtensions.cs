@@ -42,6 +42,12 @@ namespace Overby
 
     public static class SortingExtensions
     {
+        
+        public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, params string[] sortExpressions)
+		{
+			return source.OrderBy(sortExpressions.Select (SortDescriptor.Parse));
+		}
+        
         public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, IEnumerable<SortDescriptor> sorts)
         {
             if (sorts == null) throw new ArgumentNullException("sorts");
