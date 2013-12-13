@@ -3,62 +3,117 @@
  * and part of the Ronnie Overby Grab Bag: https://github.com/ronnieoverby/RonnieOverbyGrabBag
  */
 
+
+// Thanks to Marc Gravell for some of the methods (http://stackoverflow.com/a/233505/64334)
+
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
-using FraudMigUtil.Controls;
+
+
 
 namespace Overby
 {
-    public static class Extensions
+    public class SortDescriptor
     {
-        public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, SortConstructedEventArgs sortExpressionConstructedEventArgs )
+        public string Property { get; set; }
+        public bool Descending { get; set; }
+
+        public SortDescriptor()
         {
-            return sortExpressionConstructedEventArgs.Order(source);
+            // for serializers
         }
 
-        // Thanks to Marc Gravell for the following methods (http://stackoverflow.com/a/233505/64334)
+        public SortDescriptor(string property, bool descending = false)
+        {
+            Property = property;
+            Descending = descending;
+        }
+
+        public static SortDescriptor Parse(string s)
+        {
+            var parts = s.Split().Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+            var property = parts.FirstOrDefault();
+            var desc = parts.Skip(1).Take(1).Any(p => p.StartsWith("d", StringComparison.OrdinalIgnoreCase));
+            return new SortDescriptor(property, desc);
+        }
+    }
+
+    public static class SortingExtensions
+    {
+        public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, IEnumerable<SortDescriptor> sorts)
+        {
+            if (sorts == null) throw new ArgumentNullException("sorts");
+
+            IOrderedQueryable<T> sorted = null;
+            var i = 0;
+            foreach (var sort in sorts)
+            {
+                sorted = i == 0
+                    ? source.OrderBy(sort.Property, sort.Descending)
+                    : sorted.ThenBy(sort.Property, sort.Descending);
+
+                i++;
+            }
+
+            return sorted ?? source.OrderBy(x => 0);
+        }
+
+        public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, string property, bool desc)
+        {
+            return desc ? source.OrderByDescending(property) : source.OrderBy(property);
+        }
 
         public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, string property)
         {
-            return ApplyOrder<T>(source, property, "OrderBy");
+            return ApplyOrder(source, property, "OrderBy");
         }
+
         public static IOrderedQueryable<T> OrderByDescending<T>(this IQueryable<T> source, string property)
         {
-            return ApplyOrder<T>(source, property, "OrderByDescending");
+            return ApplyOrder(source, property, "OrderByDescending");
         }
+
+        public static IOrderedQueryable<T> ThenBy<T>(this IOrderedQueryable<T> source, string property, bool desc)
+        {
+            return desc ? source.ThenByDescending(property) : source.ThenBy(property);
+        }
+
         public static IOrderedQueryable<T> ThenBy<T>(this IOrderedQueryable<T> source, string property)
         {
-            return ApplyOrder<T>(source, property, "ThenBy");
+            return ApplyOrder(source, property, "ThenBy");
         }
+
         public static IOrderedQueryable<T> ThenByDescending<T>(this IOrderedQueryable<T> source, string property)
         {
-            return ApplyOrder<T>(source, property, "ThenByDescending");
+            return ApplyOrder(source, property, "ThenByDescending");
         }
-        static IOrderedQueryable<T> ApplyOrder<T>(IQueryable<T> source, string property, string methodName)
+
+        private static IOrderedQueryable<T> ApplyOrder<T>(IQueryable<T> source, string property, string methodName)
         {
-            string[] props = property.Split('.');
-            Type type = typeof(T);
-            ParameterExpression arg = Expression.Parameter(type, "x");
+            var props = property.Split('.');
+            var type = typeof(T);
+            var arg = Expression.Parameter(type, "x");
             Expression expr = arg;
-            foreach (string prop in props)
+            foreach (var prop in props)
             {
                 // use reflection (not ComponentModel) to mirror LINQ
-                PropertyInfo pi = type.GetProperty(prop);
+                var pi = type.GetProperty(prop);
                 expr = Expression.Property(expr, pi);
                 type = pi.PropertyType;
             }
-            Type delegateType = typeof(Func<,>).MakeGenericType(typeof(T), type);
-            LambdaExpression lambda = Expression.Lambda(delegateType, expr, arg);
+            var delegateType = typeof(Func<,>).MakeGenericType(typeof(T), type);
+            var lambda = Expression.Lambda(delegateType, expr, arg);
 
-            object result = typeof(Queryable).GetMethods().Single(
-                    method => method.Name == methodName
-                            && method.IsGenericMethodDefinition
-                            && method.GetGenericArguments().Length == 2
-                            && method.GetParameters().Length == 2)
-                    .MakeGenericMethod(typeof(T), type)
-                    .Invoke(null, new object[] { source, lambda });
+            var result = typeof(Queryable).GetMethods().Single(
+                method => method.Name == methodName
+                          && method.IsGenericMethodDefinition
+                          && method.GetGenericArguments().Length == 2
+                          && method.GetParameters().Length == 2)
+                .MakeGenericMethod(typeof(T), type)
+                .Invoke(null, new object[] { source, lambda });
+
             return (IOrderedQueryable<T>)result;
         }
     }
